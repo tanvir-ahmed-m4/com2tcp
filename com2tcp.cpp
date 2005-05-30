@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.2  2005/05/30 12:17:32  vfrolov
+ * Fixed resolving problem
+ *
  * Revision 1.1  2005/05/30 10:02:33  vfrolov
  * Initial revision
  *
@@ -442,17 +445,18 @@ static SOCKET Connect(const char *pAddr, const char *pPort)
   sn.sin_family = AF_INET;
   sn.sin_port = htons((u_short)atoi(pPort));
 
-  unsigned long addr = inet_addr(pAddr);
-  const struct hostent *pHostEnt = (addr == INADDR_NONE) ?
-                                                 gethostbyname(pAddr) :
-                                                 gethostbyaddr((const char *)&addr, 4, AF_INET);
+  sn.sin_addr.S_un.S_addr = inet_addr(pAddr);
 
-  if (!pHostEnt) {
-    TraceLastError("Connect(): gethostbyname(\"%s\")", pAddr);
-    return INVALID_SOCKET;
+  if (sn.sin_addr.S_un.S_addr == INADDR_NONE) {
+    const struct hostent *pHostEnt = gethostbyname(pAddr);
+
+    if (!pHostEnt) {
+      TraceLastError("Connect(): gethostbyname(\"%s\")", pAddr);
+      return INVALID_SOCKET;
+    }
+
+    memcpy(&sn.sin_addr, pHostEnt->h_addr, pHostEnt->h_length);
   }
-
-  memcpy(&sn.sin_addr, pHostEnt->h_addr, pHostEnt->h_length);
 
   const struct protoent *pProtoEnt;
   
