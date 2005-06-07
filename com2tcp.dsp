@@ -93,6 +93,10 @@ SOURCE=.\com2tcp.cpp
 # End Source File
 # Begin Source File
 
+SOURCE=.\com2tcp.rc
+# End Source File
+# Begin Source File
+
 SOURCE=.\telnet.cpp
 # End Source File
 # Begin Source File
