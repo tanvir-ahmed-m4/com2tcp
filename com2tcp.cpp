@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.5  2005/06/08 15:48:17  vfrolov
+ * Implemented --awak-seq option
+ *
  * Revision 1.4  2005/06/07 10:06:37  vfrolov
  * Added ability to use port names
  *
@@ -305,7 +308,7 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
         waitingStat = FALSE;
         break;
       case WAIT_TIMEOUT:
-        break;                       
+        break;
       default:
         TraceLastError("InOut(): WaitForMultipleObjects()");
         stop = TRUE;
@@ -321,9 +324,10 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
   printf("InOut() - STOP\n");
 }
 ///////////////////////////////////////////////////////////////
-static BOOL WaitComReady(HANDLE hC0C)
+static BOOL WaitComReady(HANDLE hC0C, const BYTE *pAwakSeq)
 {
   enum {
+    EVENT_READ,
     EVENT_STAT,
     EVENT_NUM
   };
@@ -342,9 +346,27 @@ static BOOL WaitComReady(HANDLE hC0C)
   }
 
   DWORD not_used;
-  BOOL waitingStat = FALSE;
+
+  const BYTE *pAwakSeqNext = pAwakSeq;
+
+  BYTE cbufRead[1];
+  BOOL waitingRead = !(pAwakSeq && *pAwakSeq);
+  BOOL waitingStat = !waitingRead;
 
   while (!fault) {
+    if (!waitingRead) {
+      if (!pAwakSeqNext || !*pAwakSeqNext)
+        break;
+
+      if (!ReadFile(hC0C, cbufRead, sizeof(cbufRead), &not_used, &overlaps[EVENT_READ])) {
+        if (::GetLastError() != ERROR_IO_PENDING) {
+          TraceLastError("WaitComReady(): ReadFile()");
+          break;
+        }
+      }
+      waitingRead = TRUE;
+    }
+
     if (!waitingStat) {
       if (!WaitCommEvent(hC0C, &not_used, &overlaps[EVENT_STAT])) {
         if (::GetLastError() != ERROR_IO_PENDING) {
@@ -381,8 +403,28 @@ static BOOL WaitComReady(HANDLE hC0C)
       }
     }
 
-    if (waitingStat) {
+    if (waitingRead && waitingStat) {
+      DWORD done;
+
       switch (WaitForMultipleObjects(EVENT_NUM, hEvents, FALSE, 5000)) {
+      case WAIT_OBJECT_0 + EVENT_READ:
+        if (!GetOverlappedResult(hC0C, &overlaps[EVENT_READ], &done, FALSE)) {
+          TraceLastError("WaitComReady(): GetOverlappedResult(EVENT_READ)");
+          fault = TRUE;
+        }
+        ResetEvent(hEvents[EVENT_READ]);
+        if (done && pAwakSeqNext) {
+          if (*pAwakSeqNext == *cbufRead) {
+            pAwakSeqNext++;
+          } else {
+            pAwakSeqNext = pAwakSeq;
+            if (*pAwakSeqNext == *cbufRead)
+              pAwakSeqNext++;
+          }
+          printf("Skipped character 0x%02.2X\n", (int)*cbufRead);
+        }
+        waitingRead = FALSE;
+        break;
       case WAIT_OBJECT_0 + EVENT_STAT:
         if (!GetOverlappedResult(hC0C, &overlaps[EVENT_STAT], &not_used, FALSE)) {
           TraceLastError("WaitComReady(): GetOverlappedResult(EVENT_STAT)");
@@ -391,7 +433,7 @@ static BOOL WaitComReady(HANDLE hC0C)
         waitingStat = FALSE;
         break;
       case WAIT_TIMEOUT:
-        break;                       
+        break;
       default:
         TraceLastError("WaitComReady(): WaitForMultipleObjects()");
         fault = TRUE;
@@ -553,12 +595,14 @@ static void Usage(const char *pProgName)
   fprintf(stderr, "    %s [options] \\\\.\\<com port> <host addr> <host port>\n", pProgName);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    --telnet              - use Telnet protocol.\n");
+  fprintf(stderr, "    --awak-seq sequence   - wait awakening sequence from com port.\n");
   exit(1);
 }
 ///////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {
   enum {prNone, prTelnet} protocol = prNone;
+  const BYTE *pAwakSeq = NULL;
   char **pArgs = &argv[1];
 
   while (argc > 1) {
@@ -567,6 +611,13 @@ int main(int argc, char* argv[])
 
     if (!strcmp(*pArgs, "--telnet")) {
       protocol = prTelnet;
+      pArgs++;
+      argc--;
+    } else
+    if (!strcmp(*pArgs, "--awak-seq")) {
+      pArgs++;
+      argc--;
+      pAwakSeq = (const BYTE *)*pArgs;
       pArgs++;
       argc--;
     } else {
@@ -588,7 +639,7 @@ int main(int argc, char* argv[])
 
   WSAStartup(MAKEWORD(1, 1), &wsaData);
 
-  while (WaitComReady(hC0C)) {
+  while (WaitComReady(hC0C, pAwakSeq)) {
     SOCKET hSock = Connect(pArgs[1], pArgs[2]);
 
     if (hSock == INVALID_SOCKET)
