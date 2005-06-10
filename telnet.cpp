@@ -19,21 +19,22 @@
  *
  *
  * $Log$
+ * Revision 1.2  2005/06/10 15:55:10  vfrolov
+ * Implemented --terminal option
+ *
  * Revision 1.1  2005/06/06 15:19:02  vfrolov
  * Initial revision
  *
  *
  */
 
-#include <winsock2.h>
-#include <windows.h>
-
-#include <stdio.h>
-
-#include "utils.h"
+#include "precomp.h"
 #include "telnet.h"
+
 ///////////////////////////////////////////////////////////////
 enum {
+  cdSE   = 240,
+  cdSB   = 250,
   cdWILL = 251,
   cdWONT = 252,
   cdDO   = 253,
@@ -44,6 +45,12 @@ enum {
 static const char *code2name(unsigned code)
 {
   switch (code) {
+    case cdSE:
+      return "SE";
+      break;
+    case cdSB:
+      return "SB";
+      break;
     case cdWILL:
       return "WILL";
       break;
@@ -61,20 +68,37 @@ static const char *code2name(unsigned code)
 }
 ///////////////////////////////////////////////////////////////
 enum {
-  opEcho        = 1,
+  opEcho            = 1,
+  opTerminalType    = 24,
 };
 ///////////////////////////////////////////////////////////////
 enum {
   stData,
   stCode,
   stOption,
+  stSubParams,
+  stSubCode,
 };
 ///////////////////////////////////////////////////////////////
 TelnetProtocol::TelnetProtocol(int _thresholdSend, int _thresholdWrite)
   : Protocol(_thresholdSend, _thresholdWrite),
     state(stData)
 {
+  SetTerminalType(NULL);
+
   options[opEcho].remoteOptionState = OptionState::osNo;
+  options[opTerminalType].localOptionState = OptionState::osNo;
+}
+
+void TelnetProtocol::SetTerminalType(const char *pTerminalType)
+{
+  terminalType.clear();
+
+  if (!pTerminalType)
+    pTerminalType = "UNKNOWN";
+
+  while (*pTerminalType)
+    terminalType.push_back(*pTerminalType++);
 }
 
 int TelnetProtocol::Write(const void *pBuf, int count)
@@ -94,6 +118,7 @@ int TelnetProtocol::Write(const void *pBuf, int count)
           case cdIAC:
             WriteRaw(&ch, 1);
             break;
+          case cdSB:
           case cdWILL:
           case cdWONT:
           case cdDO:
@@ -109,6 +134,11 @@ int TelnetProtocol::Write(const void *pBuf, int count)
       case stOption:
         printf("RECV: %s %u\n", code2name(code), (unsigned)ch);
         switch (code) {
+          case cdSB:
+            option = ch;
+            params.clear();
+            state = stSubParams;
+            break;
           case cdWILL:
             switch (options[ch].remoteOptionState) {
               case OptionState::osCant:
@@ -158,10 +188,48 @@ int TelnetProtocol::Write(const void *pBuf, int count)
             }
             break;
           default:
-            printf("RECV: %u %u (ignore)\n", (unsigned)code, (unsigned)ch);
-          };
-      state = stData;
-      break;
+            printf("  ignored\n");
+        };
+        if (state == stOption)
+          state = stData;
+        break;
+      case stSubParams:
+        if (ch == cdIAC)
+          state = stSubCode;
+        else
+          params.push_back(ch);
+        break;
+      case stSubCode:
+        switch (ch) {
+          case cdIAC:
+            state = stSubParams;
+            break;
+          case cdSE:
+            printf("  ");
+            {
+              for (BYTE_vector::const_iterator i = params.begin() ; i != params.end() ; i++)
+                printf("%u ", (unsigned)*i);
+            }
+            printf("SE\n");
+
+            switch (option) {
+              case opTerminalType:
+                params.clear();
+                params.push_back(0);
+                params.insert(params.end(), terminalType.begin(), terminalType.end());
+                SendSubNegotiation(option, params);
+                break;
+              default:
+                printf("  ignored\n");
+            }
+
+            state = stData;
+            break;
+          default:
+            printf("RECV: unknown sub code %u\n", (unsigned)ch);
+            state = stData;
+        };
+        break;
     }
   }
 
@@ -173,6 +241,22 @@ void TelnetProtocol::SendOption(BYTE code, BYTE option)
   BYTE buf[3] = {cdIAC, code, option};
 
   printf("SEND: %s %u\n", code2name(code), (unsigned)option);
+
+  SendRaw(buf, sizeof(buf));
+}
+
+void TelnetProtocol::SendSubNegotiation(int option, const BYTE_vector &params)
+{
+  SendOption(cdSB, (BYTE)option);
+
+  printf("  ");
+  for (BYTE_vector::const_iterator i = params.begin() ; i != params.end() ; i++) {
+    printf("%u ", (unsigned)*i);
+    SendRaw(i, 1);
+  }
+  printf("SE\n");
+
+  BYTE buf[2] = {cdIAC, cdSE};
 
   SendRaw(buf, sizeof(buf));
 }

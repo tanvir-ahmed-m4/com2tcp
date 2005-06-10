@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.2  2005/06/10 15:55:10  vfrolov
+ * Implemented --terminal option
+ *
  * Revision 1.1  2005/06/06 15:19:02  vfrolov
  * Initial revision
  *
@@ -33,15 +36,17 @@ class TelnetProtocol : public Protocol
 {
   public:
     TelnetProtocol(int _thresholdSend = 0, int _thresholdWrite = 0);
+    void SetTerminalType(const char *pTerminalType);
 
-    //virtual int Send(const void *pBuf, int count);
     virtual int Write(const void *pBuf, int count);
-
   protected:
     void SendOption(BYTE code, BYTE option);
+    void SendSubNegotiation(int option, const BYTE_vector &params);
 
     int state;
     int code;
+    int option;
+    BYTE_vector params;
 
     struct OptionState
     {
@@ -52,7 +57,7 @@ class TelnetProtocol : public Protocol
     };
 
     OptionState options[256];
-    DataStream toTelnet;
+    BYTE_vector terminalType;
 };
 ///////////////////////////////////////////////////////////////
 

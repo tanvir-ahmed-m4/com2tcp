@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.6  2005/06/10 15:55:10  vfrolov
+ * Implemented --terminal option
+ *
  * Revision 1.5  2005/06/08 15:48:17  vfrolov
  * Implemented --awak-seq option
  *
@@ -37,12 +40,7 @@
  *
  */
 
-#include <winsock2.h>
-#include <windows.h>
-
-#include <stdio.h>
-
-#include "utils.h"
+#include "precomp.h"
 #include "telnet.h"
 
 ///////////////////////////////////////////////////////////////
@@ -595,6 +593,7 @@ static void Usage(const char *pProgName)
   fprintf(stderr, "    %s [options] \\\\.\\<com port> <host addr> <host port>\n", pProgName);
   fprintf(stderr, "Options:\n");
   fprintf(stderr, "    --telnet              - use Telnet protocol.\n");
+  fprintf(stderr, "    --terminal type       - use terminal type.\n");
   fprintf(stderr, "    --awak-seq sequence   - wait awakening sequence from com port.\n");
   exit(1);
 }
@@ -602,6 +601,7 @@ static void Usage(const char *pProgName)
 int main(int argc, char* argv[])
 {
   enum {prNone, prTelnet} protocol = prNone;
+  const char *pTermType = NULL;
   const BYTE *pAwakSeq = NULL;
   char **pArgs = &argv[1];
 
@@ -611,6 +611,13 @@ int main(int argc, char* argv[])
 
     if (!strcmp(*pArgs, "--telnet")) {
       protocol = prTelnet;
+      pArgs++;
+      argc--;
+    } else
+    if (!strcmp(*pArgs, "--terminal")) {
+      pArgs++;
+      argc--;
+      pTermType = *pArgs;
       pArgs++;
       argc--;
     } else
@@ -650,6 +657,7 @@ int main(int argc, char* argv[])
     switch (protocol) {
     case prTelnet:
       pProtocol = new TelnetProtocol(10, 10);
+      ((TelnetProtocol *)pProtocol)->SetTerminalType(pTermType);
       break;
     default:
       pProtocol = new Protocol(10, 10);
