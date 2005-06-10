@@ -4,7 +4,7 @@
 
 INTRODUCTION
 
-The COM port to TCP redirector is a Windows application and is part
+The COM port to TCP redirector is a Windows application and is a part
 of the com0com project.
 
 In conjunction with the Null-modem emulator (com0com) the com2tcp
@@ -19,7 +19,7 @@ Start MSVC (v5 or v6) with com2tcp.dsw file.
 Set Active Configuration to com2tcp - Win32 Release".
 Build com2tcp.exe.
 
-EXAMPLE
+EXAMPLE OF USAGE
 
 You have old TERM95.EXE application from the Norton Commander 5.0 for
 MS-DOS and you'd like to use it to communicate with your.telnet.server
