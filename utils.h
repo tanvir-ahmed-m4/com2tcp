@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.4  2005/10/03 13:44:17  vfrolov
+ * Added Clean() method
+ *
  * Revision 1.3  2005/06/10 15:55:10  vfrolov
  * Implemented --terminal option
  *
@@ -82,8 +85,6 @@ class DataStream
     int GetData(void *pBuf, int count);
     void PutEof() { eof = TRUE; }
     BOOL isFull() const { return threshold && threshold < busy; }
-
-  protected:
     void Clean();
 
   private:
@@ -111,6 +112,7 @@ class Protocol
     void WriteEof() { streamWriteRecv.PutEof(); }
     BOOL isWriteFull() const { return streamWriteRecv.isFull(); }
     int Recv(void *pBuf, int count) { return streamWriteRecv.GetData(pBuf, count); }
+    virtual void Clean();
 
   private:
     DataStream streamSendRead;

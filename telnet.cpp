@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.3  2005/10/03 13:44:17  vfrolov
+ * Added Clean() method
+ *
  * Revision 1.2  2005/06/10 15:55:10  vfrolov
  * Implemented --terminal option
  *
@@ -81,13 +84,10 @@ enum {
 };
 ///////////////////////////////////////////////////////////////
 TelnetProtocol::TelnetProtocol(int _thresholdSend, int _thresholdWrite)
-  : Protocol(_thresholdSend, _thresholdWrite),
-    state(stData)
+  : Protocol(_thresholdSend, _thresholdWrite)
 {
   SetTerminalType(NULL);
-
-  options[opEcho].remoteOptionState = OptionState::osNo;
-  options[opTerminalType].localOptionState = OptionState::osNo;
+  Clean();
 }
 
 void TelnetProtocol::SetTerminalType(const char *pTerminalType)
@@ -99,6 +99,21 @@ void TelnetProtocol::SetTerminalType(const char *pTerminalType)
 
   while (*pTerminalType)
     terminalType.push_back(*pTerminalType++);
+}
+
+void TelnetProtocol::Clean()
+{
+  state = stData;
+
+  for(int i = 0 ; i < sizeof(options)/sizeof(options[0]) ; i++) {
+    options[i].remoteOptionState = OptionState::osCant;
+    options[i].localOptionState = OptionState::osCant;
+  }
+
+  options[opEcho].remoteOptionState = OptionState::osNo;
+  options[opTerminalType].localOptionState = OptionState::osNo;
+
+  Protocol::Clean();
 }
 
 int TelnetProtocol::Write(const void *pBuf, int count)

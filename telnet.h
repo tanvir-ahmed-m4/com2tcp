@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.3  2005/10/03 13:44:17  vfrolov
+ * Added Clean() method
+ *
  * Revision 1.2  2005/06/10 15:55:10  vfrolov
  * Implemented --terminal option
  *
@@ -39,6 +42,7 @@ class TelnetProtocol : public Protocol
     void SetTerminalType(const char *pTerminalType);
 
     virtual int Write(const void *pBuf, int count);
+    virtual void Clean();
   protected:
     void SendOption(BYTE code, BYTE option);
     void SendSubNegotiation(int option, const BYTE_vector &params);
@@ -50,7 +54,6 @@ class TelnetProtocol : public Protocol
 
     struct OptionState
     {
-      OptionState() : localOptionState(osCant), remoteOptionState(osCant) {}
       enum {osCant, osNo, osYes};
       int localOptionState  : 2;
       int remoteOptionState : 2;

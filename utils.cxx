@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.3  2005/10/03 13:44:17  vfrolov
+ * Added Clean() method
+ *
  * Revision 1.2  2005/06/10 15:51:26  vfrolov
  * Included precomp.h
  *
@@ -169,5 +172,11 @@ int Protocol::Send(const void *pBuf, int count)
 int Protocol::Write(const void *pBuf, int count)
 {
   return WriteRaw(pBuf, count);
+}
+
+void Protocol::Clean()
+{
+  streamSendRead.Clean();
+  streamWriteRecv.Clean();
 }
 ///////////////////////////////////////////////////////////////
