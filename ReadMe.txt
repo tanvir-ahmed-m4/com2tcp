@@ -9,7 +9,7 @@ of the com0com project.
 
 In conjunction with the Null-modem emulator (com0com) the com2tcp
 enables to use a COM port based applications to communicate with the
-TCP/IP servers.
+TCP/IP based applications.
 
 The homepage for com0com project is http://com0com.sourceforge.net/.
 

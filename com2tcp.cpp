@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.7  2005/10/03 13:48:08  vfrolov
+ * Added --ignore-dsr and listen options
+ *
  * Revision 1.6  2005/06/10 15:55:10  vfrolov
  * Implemented --terminal option
  *
@@ -103,9 +106,11 @@ static BOOL PrepareEvents(int num, HANDLE *hEvents, OVERLAPPED *overlaps)
   return TRUE;
 }
 ///////////////////////////////////////////////////////////////
-static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
+static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol, BOOL ignoreDSR)
 {
   printf("InOut() START\n");
+
+  protocol.Clean();
 
   BOOL stop = FALSE;
 
@@ -115,6 +120,7 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
     EVENT_RECEIVED,
     EVENT_WRITTEN,
     EVENT_STAT,
+    EVENT_CLOSE,
     EVENT_NUM
   };
 
@@ -128,6 +134,8 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
     TraceLastError("InOut(): SetCommMask()");
     stop = TRUE;
   }
+
+  WSAEventSelect(hSock, hEvents[EVENT_CLOSE], FD_CLOSE);
 
   DWORD not_used;
 
@@ -148,6 +156,7 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
   BOOL waitingWrite = FALSE;
 
   BOOL waitingStat = FALSE;
+  int DSR = -1;
 
   while (!stop) {
     if (!waitingSend) {
@@ -227,8 +236,20 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
       }
 
       if (!(stat & MS_DSR_ON)) {
-        printf("DSR is OFF\n");
-        break;
+        if (DSR != 0) {
+          printf("DSR is OFF\n");
+          DSR = 0;
+        }
+        if (!ignoreDSR) {
+          if (waitingSend)
+            Sleep(1000);
+          break;
+        }
+      } else {
+        if (DSR != 1) {
+          printf("DSR is ON\n");
+          DSR = 1;
+        }
       }
     }
 
@@ -305,6 +326,13 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
         }
         waitingStat = FALSE;
         break;
+      case WAIT_OBJECT_0 + EVENT_CLOSE:
+        ResetEvent(hEvents[EVENT_CLOSE]);
+        printf("EVENT_CLOSE\n");
+        if (waitingWrite)
+          Sleep(1000);
+        stop = TRUE;
+        break;
       case WAIT_TIMEOUT:
         break;
       default:
@@ -322,8 +350,14 @@ static void InOut(HANDLE hC0C, SOCKET hSock, Protocol &protocol)
   printf("InOut() - STOP\n");
 }
 ///////////////////////////////////////////////////////////////
-static BOOL WaitComReady(HANDLE hC0C, const BYTE *pAwakSeq)
+static BOOL WaitComReady(HANDLE hC0C, BOOL ignoreDSR, const BYTE *pAwakSeq)
 {
+  BOOL waitAwakSeq = (pAwakSeq && *pAwakSeq);
+  BOOL waitDSR = (!ignoreDSR && !waitAwakSeq);
+
+  if (!waitAwakSeq && !waitDSR)
+    return TRUE;
+
   enum {
     EVENT_READ,
     EVENT_STAT,
@@ -348,8 +382,8 @@ static BOOL WaitComReady(HANDLE hC0C, const BYTE *pAwakSeq)
   const BYTE *pAwakSeqNext = pAwakSeq;
 
   BYTE cbufRead[1];
-  BOOL waitingRead = !(pAwakSeq && *pAwakSeq);
-  BOOL waitingStat = !waitingRead;
+  BOOL waitingRead = !waitAwakSeq;
+  BOOL waitingStat = !waitDSR;
 
   while (!fault) {
     if (!waitingRead) {
@@ -448,7 +482,7 @@ static BOOL WaitComReady(HANDLE hC0C, const BYTE *pAwakSeq)
   return !fault;
 }
 ///////////////////////////////////////////////////////////////
-static HANDLE OpenC0C(const char *pPath)
+static HANDLE OpenC0C(const char *pPath, BOOL ignoreDSR)
 {
   HANDLE hC0C = CreateFile(pPath,
                     GENERIC_READ|GENERIC_WRITE,
@@ -477,7 +511,7 @@ static HANDLE OpenC0C(const char *pPath)
 
   dcb.fOutxCtsFlow = FALSE;
   dcb.fOutxDsrFlow = FALSE;
-  dcb.fDsrSensitivity = TRUE;
+  dcb.fDsrSensitivity = !ignoreDSR;
   dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
   dcb.fDtrControl = DTR_CONTROL_ENABLE;
   dcb.fOutX = FALSE;
@@ -488,6 +522,8 @@ static HANDLE OpenC0C(const char *pPath)
   dcb.XoffLim = 100;
   dcb.fParity = FALSE;
   dcb.fNull = FALSE;
+  dcb.fAbortOnError = FALSE;
+  dcb.fErrorChar = FALSE;
 
   if (!mySetCommState(hC0C, &dcb)) {
     CloseHandle(hC0C);
@@ -521,11 +557,10 @@ static HANDLE OpenC0C(const char *pPath)
   return hC0C;
 }
 ///////////////////////////////////////////////////////////////
-static SOCKET Connect(const char *pAddr, const char *pPort)
-{
-  const char *pProtoName = "tcp";
-  struct sockaddr_in sn;
+static const char *pProtoName = "tcp";
 
+static BOOL SetAddr(struct sockaddr_in &sn, const char *pAddr, const char *pPort)
+{
   memset(&sn, 0, sizeof(sn));
   sn.sin_family = AF_INET;
 
@@ -535,43 +570,38 @@ static SOCKET Connect(const char *pAddr, const char *pPort)
 
   sn.sin_port = pServEnt ? pServEnt->s_port : htons((u_short)atoi(pPort));
 
-  sn.sin_addr.S_un.S_addr = inet_addr(pAddr);
+  sn.sin_addr.s_addr = pAddr ? inet_addr(pAddr) : INADDR_ANY;
 
-  if (sn.sin_addr.S_un.S_addr == INADDR_NONE) {
+  if (sn.sin_addr.s_addr == INADDR_NONE) {
     const struct hostent *pHostEnt = gethostbyname(pAddr);
 
     if (!pHostEnt) {
-      TraceLastError("Connect(): gethostbyname(\"%s\")", pAddr);
-      return INVALID_SOCKET;
+      TraceLastError("SetAddr(): gethostbyname(\"%s\")", pAddr);
+      return FALSE;
     }
 
     memcpy(&sn.sin_addr, pHostEnt->h_addr, pHostEnt->h_length);
   }
+  return TRUE;
+}
 
+static SOCKET Socket()
+{
   const struct protoent *pProtoEnt;
-  
+
   pProtoEnt = getprotobyname(pProtoName);
 
   if (!pProtoEnt) {
-    TraceLastError("Connect(): getprotobyname(\"%s\")", pProtoName);
+    TraceLastError("Socket(): getprotobyname(\"%s\")", pProtoName);
     return INVALID_SOCKET;
   }
 
   SOCKET hSock = socket(AF_INET, SOCK_STREAM, pProtoEnt->p_proto);
 
   if (hSock == INVALID_SOCKET) {
-    TraceLastError("Connect(): socket()");
+    TraceLastError("Socket(): socket()");
     return INVALID_SOCKET;
   }
-
-  if (connect(hSock, (struct sockaddr *)&sn, sizeof(sn)) == SOCKET_ERROR) {
-    TraceLastError("Connect(): connect()");
-    closesocket(hSock);
-    return INVALID_SOCKET;
-  }
-
-  printf("Connect(\"%s\", \"%s\") - OK\n", pAddr, pPort);
-
 
   return hSock;
 }
@@ -587,14 +617,136 @@ static void Disconnect(SOCKET hSock)
   printf("Disconnect() - OK\n");
 }
 ///////////////////////////////////////////////////////////////
+static int tcp2com(
+    const char *pPath,
+    BOOL ignoreDSR,
+    const char *pIF,
+    const char *pPort,
+    Protocol &protocol)
+{
+  struct sockaddr_in snl;
+
+  if (!SetAddr(snl, pIF, pPort))
+    return 2;
+
+  SOCKET hSockListen = Socket();
+
+  if (hSockListen == INVALID_SOCKET)
+    return 2;
+
+  if (bind(hSockListen, (struct sockaddr *)&snl, sizeof(snl)) == SOCKET_ERROR) {
+    TraceLastError("tcp2com(): bind(\"%s\", \"%s\")", pIF, pPort);
+    closesocket(hSockListen);
+    return 2;
+  }
+
+  if (listen(hSockListen, SOMAXCONN) == SOCKET_ERROR) {
+    TraceLastError("tcp2com(): listen(\"%s\", \"%s\")", pIF, pPort);
+    closesocket(hSockListen);
+    return 2;
+  }
+  
+  for (;;) {
+    struct sockaddr_in sn;
+    int snlen = sizeof(sn);
+    SOCKET hSock = accept(hSockListen, (struct sockaddr *)&sn, &snlen);
+
+    if (hSock == INVALID_SOCKET) {
+      TraceLastError("tcp2com(): accept()");
+      break;
+    }
+
+    u_long addr = ntohl(sn.sin_addr.s_addr);
+
+    printf("Accept(%d.%d.%d.%d) - OK\n",
+        (addr >> 24) & 0xFF,
+        (addr >> 16) & 0xFF,
+        (addr >>  8) & 0xFF,
+         addr        & 0xFF);
+
+    HANDLE hC0C = OpenC0C(pPath, ignoreDSR);
+
+    if (hC0C != INVALID_HANDLE_VALUE) {
+      InOut(hC0C, hSock, protocol, ignoreDSR);
+      CloseHandle(hC0C);
+    }
+
+    Disconnect(hSock);
+  }
+
+  closesocket(hSockListen);
+
+  return 2;
+}
+///////////////////////////////////////////////////////////////
+static SOCKET Connect(const char *pAddr, const char *pPort)
+{
+  struct sockaddr_in sn;
+
+  if (!SetAddr(sn, pAddr, pPort))
+    return INVALID_SOCKET;
+
+  SOCKET hSock = Socket();
+
+  if (hSock == INVALID_SOCKET)
+    return INVALID_SOCKET;
+
+  if (connect(hSock, (struct sockaddr *)&sn, sizeof(sn)) == SOCKET_ERROR) {
+    TraceLastError("Connect(): connect(\"%s\", \"%s\")", pAddr, pPort);
+    closesocket(hSock);
+    return INVALID_SOCKET;
+  }
+
+  printf("Connect(\"%s\", \"%s\") - OK\n", pAddr, pPort);
+
+  return hSock;
+}
+
+static int com2tcp(
+    const char *pPath,
+    BOOL ignoreDSR,
+    const char *pAddr,
+    const char *pPort,
+    Protocol &protocol,
+    const BYTE *pAwakSeq)
+{
+  HANDLE hC0C = OpenC0C(pPath, ignoreDSR);
+
+  if (hC0C == INVALID_HANDLE_VALUE) {
+    return 2;
+  }
+
+  while (WaitComReady(hC0C, ignoreDSR, pAwakSeq)) {
+    SOCKET hSock = Connect(pAddr, pPort);
+
+    if (hSock == INVALID_SOCKET)
+      break;
+
+    InOut(hC0C, hSock, protocol, ignoreDSR);
+
+    Disconnect(hSock);
+  }
+
+  CloseHandle(hC0C);
+
+  return 2;
+}
+///////////////////////////////////////////////////////////////
 static void Usage(const char *pProgName)
 {
   fprintf(stderr, "Usage:\n");
   fprintf(stderr, "    %s [options] \\\\.\\<com port> <host addr> <host port>\n", pProgName);
-  fprintf(stderr, "Options:\n");
+  fprintf(stderr, "    %s [options] \\\\.\\<com port> <listen port>\n", pProgName);
+  fprintf(stderr, "Common options:\n");
   fprintf(stderr, "    --telnet              - use Telnet protocol.\n");
-  fprintf(stderr, "    --terminal type       - use terminal type.\n");
-  fprintf(stderr, "    --awak-seq sequence   - wait awakening sequence from com port.\n");
+  fprintf(stderr, "    --terminal type       - use terminal type (RFC 1091).\n");
+  fprintf(stderr, "    --ignore-dsr          - ignore DSR state.\n");
+  fprintf(stderr, "Connect options:\n");
+  fprintf(stderr, "    --awak-seq sequence   - wait awakening sequence from com port\n"
+                  "                            before connecting to host. All data before\n"
+                  "                            sequence and sequence will be not sent.\n");
+  fprintf(stderr, "Listen options:\n");
+  fprintf(stderr, "    --interface if        - listen interface if.\n");
   exit(1);
 }
 ///////////////////////////////////////////////////////////////
@@ -603,7 +755,9 @@ int main(int argc, char* argv[])
   enum {prNone, prTelnet} protocol = prNone;
   const char *pTermType = NULL;
   const BYTE *pAwakSeq = NULL;
+  const char *pIF = NULL;
   char **pArgs = &argv[1];
+  BOOL ignoreDSR = FALSE;
 
   while (argc > 1) {
     if (**pArgs != '-')
@@ -621,10 +775,22 @@ int main(int argc, char* argv[])
       pArgs++;
       argc--;
     } else
+    if (!strcmp(*pArgs, "--ignore-dsr")) {
+      pArgs++;
+      argc--;
+      ignoreDSR = TRUE;
+    } else
     if (!strcmp(*pArgs, "--awak-seq")) {
       pArgs++;
       argc--;
       pAwakSeq = (const BYTE *)*pArgs;
+      pArgs++;
+      argc--;
+    } else
+    if (!strcmp(*pArgs, "--interface")) {
+      pArgs++;
+      argc--;
+      pIF = *pArgs;
       pArgs++;
       argc--;
     } else {
@@ -633,45 +799,34 @@ int main(int argc, char* argv[])
     }
   }
 
-  if (argc != 4)
+  if (argc < 3 || argc > 4)
     Usage(argv[0]);
-
-  HANDLE hC0C = OpenC0C(pArgs[0]);
-
-  if (hC0C == INVALID_HANDLE_VALUE) {
-    return 2;
-  }
 
   WSADATA wsaData;
 
   WSAStartup(MAKEWORD(1, 1), &wsaData);
 
-  while (WaitComReady(hC0C, pAwakSeq)) {
-    SOCKET hSock = Connect(pArgs[1], pArgs[2]);
+  Protocol *pProtocol;
 
-    if (hSock == INVALID_SOCKET)
-      break;
+  switch (protocol) {
+  case prTelnet:
+    pProtocol = new TelnetProtocol(10, 10);
+    ((TelnetProtocol *)pProtocol)->SetTerminalType(pTermType);
+    break;
+  default:
+    pProtocol = new Protocol(10, 10);
+  };
 
-    Protocol *pProtocol;
+  int res;
 
-    switch (protocol) {
-    case prTelnet:
-      pProtocol = new TelnetProtocol(10, 10);
-      ((TelnetProtocol *)pProtocol)->SetTerminalType(pTermType);
-      break;
-    default:
-      pProtocol = new Protocol(10, 10);
-    };
+  if (argc == 4)
+    res = com2tcp(pArgs[0], ignoreDSR, pArgs[1], pArgs[2], *pProtocol, pAwakSeq);
+  else
+    res = tcp2com(pArgs[0], ignoreDSR, pIF, pArgs[1], *pProtocol);
 
-    InOut(hC0C, hSock, *pProtocol);
+  delete pProtocol;
 
-    delete pProtocol;
-
-    Disconnect(hSock);
-  }
-
-  CloseHandle(hC0C);
   WSACleanup();
-  return 0;
+  return res;
 }
 ///////////////////////////////////////////////////////////////
