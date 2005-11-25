@@ -27,7 +27,7 @@
 #define C2T_V1 1
 #define C2T_V2 2
 #define C2T_V3 0
-#define C2T_V4 0
+#define C2T_V4 1
 
 #define MK_VERSION_STR1(V1, V2, V3, V4) #V1 "." #V2 "." #V3 "." #V4
 #define MK_VERSION_STR(V1, V2, V3, V4) MK_VERSION_STR1(V1, V2, V3, V4)
