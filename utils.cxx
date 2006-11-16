@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005 Vyacheslav Frolov
+ * Copyright (c) 2005-2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.4  2006/11/16 12:51:43  vfrolov
+ * Added ability to set COM port parameters
+ *
  * Revision 1.3  2005/10/03 13:44:17  vfrolov
  * Added Clean() method
  *
@@ -27,7 +30,6 @@
  *
  * Revision 1.1  2005/06/06 15:19:02  vfrolov
  * Initial revision
- *
  *
  */
 
@@ -178,5 +180,88 @@ void Protocol::Clean()
 {
   streamSendRead.Clean();
   streamWriteRecv.Clean();
+}
+///////////////////////////////////////////////////////////////
+ComParams::ComParams()
+  : baudRate(CBR_19200),
+    byteSize(8),
+    parity(NOPARITY),
+    stopBits(ONESTOPBIT),
+    ignoreDSR(FALSE)
+{
+}
+
+BOOL ComParams::SetParity(const char *pParity)
+{
+  switch (*pParity) {
+    case 'n': parity = NOPARITY; break;
+    case 'o': parity = ODDPARITY; break;
+    case 'e': parity = EVENPARITY; break;
+    case 'm': parity = MARKPARITY; break;
+    case 's': parity = SPACEPARITY; break;
+    case 'd': parity = -1; break;
+    default : return FALSE;
+  }
+  return TRUE;
+}
+
+BOOL ComParams::SetStopBits(const char *pStopBits)
+{
+  switch (*pStopBits) {
+    case '1':
+      if ((pStopBits[1] == '.' || pStopBits[1] == ',') && pStopBits[2] == '5')
+        stopBits = ONE5STOPBITS;
+      else
+        stopBits = ONESTOPBIT;
+      break;
+    case '2': stopBits = TWOSTOPBITS; break;
+    case 'd': stopBits = -1; break;
+    default : return FALSE;
+  }
+  return TRUE;
+}
+
+const char *ComParams::ParityStr(int parity)
+{
+  switch (parity) {
+    case NOPARITY: return "no";
+    case ODDPARITY: return "odd";
+    case EVENPARITY: return "even";
+    case MARKPARITY: return "mark";
+    case SPACEPARITY: return "space";
+    case -1: return "default";
+  }
+  return "?";
+}
+
+const char *ComParams::StopBitsStr(int stopBits)
+{
+  switch (stopBits) {
+    case ONESTOPBIT: return "1";
+    case ONE5STOPBITS: return "1.5";
+    case TWOSTOPBITS: return "2";
+    case -1: return "default";
+  }
+  return "?";
+}
+
+const char *ComParams::BaudRateLst()
+{
+  return "positive number or d[efault]";
+}
+
+const char *ComParams::ByteSizeLst()
+{
+  return "positive number or d[efault]";
+}
+
+const char *ComParams::ParityLst()
+{
+  return "n[o], o[dd], e[ven], m[ark], s[pace] or d[efault]";
+}
+
+const char *ComParams::StopBitsLst()
+{
+  return "1, 1.5, 2 or d[efault]";
 }
 ///////////////////////////////////////////////////////////////

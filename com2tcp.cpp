@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005 Vyacheslav Frolov
+ * Copyright (c) 2005-2006 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.10  2006/11/16 12:51:43  vfrolov
+ * Added ability to set COM port parameters
+ *
  * Revision 1.9  2005/11/25 13:49:23  vfrolov
  * Implemented --interface option for client mode
  *
@@ -45,7 +48,6 @@
  *
  * Revision 1.1  2005/05/30 10:02:33  vfrolov
  * Initial revision
- *
  *
  */
 
@@ -522,7 +524,7 @@ static BOOL WaitComReady(HANDLE hC0C, BOOL ignoreDSR, const BYTE *pAwakSeq)
   return !fault;
 }
 ///////////////////////////////////////////////////////////////
-static HANDLE OpenC0C(const char *pPath, BOOL ignoreDSR)
+static HANDLE OpenC0C(const char *pPath, const ComParams &comParams)
 {
   HANDLE hC0C = CreateFile(pPath,
                     GENERIC_READ|GENERIC_WRITE,
@@ -544,14 +546,21 @@ static HANDLE OpenC0C(const char *pPath, BOOL ignoreDSR)
     return INVALID_HANDLE_VALUE;
   }
 
-  dcb.BaudRate = CBR_19200;
-  dcb.ByteSize = 8;
-  dcb.Parity   = NOPARITY;
-  dcb.StopBits = ONESTOPBIT;
+  if (comParams.BaudRate() > 0)
+    dcb.BaudRate = (DWORD)comParams.BaudRate();
+
+  if (comParams.ByteSize() > 0)
+    dcb.ByteSize = (BYTE)comParams.ByteSize();
+
+  if (comParams.Parity() >= 0)
+    dcb.Parity = (BYTE)comParams.Parity();
+
+  if (comParams.StopBits() >= 0)
+    dcb.StopBits = (BYTE)comParams.StopBits();
 
   dcb.fOutxCtsFlow = FALSE;
   dcb.fOutxDsrFlow = FALSE;
-  dcb.fDsrSensitivity = !ignoreDSR;
+  dcb.fDsrSensitivity = !comParams.IgnoreDSR();
   dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
   dcb.fDtrControl = DTR_CONTROL_ENABLE;
   dcb.fOutX = FALSE;
@@ -592,7 +601,12 @@ static HANDLE OpenC0C(const char *pPath, BOOL ignoreDSR)
     return INVALID_HANDLE_VALUE;
   }
 
-  printf("OpenC0C(\"%s\") - OK\n", pPath);
+  printf("OpenC0C(\"%s\", baud=%ld, data=%ld, parity=%s, stop=%s) - OK\n",
+         pPath,
+         (long)dcb.BaudRate,
+         (long)dcb.ByteSize,
+         ComParams::ParityStr(dcb.Parity),
+         ComParams::StopBitsStr(dcb.StopBits));
 
   return hC0C;
 }
@@ -699,7 +713,7 @@ static SOCKET Accept(SOCKET hSockListen)
 
 static int tcp2com(
     const char *pPath,
-    BOOL ignoreDSR,
+    const ComParams &comParams,
     const char *pIF,
     const char *pPort,
     Protocol &protocol)
@@ -721,10 +735,10 @@ static int tcp2com(
     if (hSock == INVALID_SOCKET)
       break;
 
-    HANDLE hC0C = OpenC0C(pPath, ignoreDSR);
+    HANDLE hC0C = OpenC0C(pPath, comParams);
 
     if (hC0C != INVALID_HANDLE_VALUE) {
-      InOut(hC0C, hSock, protocol, ignoreDSR, hSockListen);
+      InOut(hC0C, hSock, protocol, comParams.IgnoreDSR(), hSockListen);
       CloseHandle(hC0C);
     }
 
@@ -764,26 +778,26 @@ static SOCKET Connect(
 
 static int com2tcp(
     const char *pPath,
-    BOOL ignoreDSR,
+    const ComParams &comParams,
     const char *pIF,
     const char *pAddr,
     const char *pPort,
     Protocol &protocol,
     const BYTE *pAwakSeq)
 {
-  HANDLE hC0C = OpenC0C(pPath, ignoreDSR);
+  HANDLE hC0C = OpenC0C(pPath, comParams);
 
   if (hC0C == INVALID_HANDLE_VALUE) {
     return 2;
   }
 
-  while (WaitComReady(hC0C, ignoreDSR, pAwakSeq)) {
+  while (WaitComReady(hC0C, comParams.IgnoreDSR(), pAwakSeq)) {
     SOCKET hSock = Connect(pIF, pAddr, pPort);
 
     if (hSock == INVALID_SOCKET)
       break;
 
-    InOut(hC0C, hSock, protocol, ignoreDSR);
+    InOut(hC0C, hSock, protocol, comParams.IgnoreDSR());
 
     Disconnect(hSock);
   }
@@ -804,7 +818,31 @@ static void Usage(const char *pProgName)
   fprintf(stderr, "Common options:\n");
   fprintf(stderr, "    --telnet              - use Telnet protocol.\n");
   fprintf(stderr, "    --terminal <type>     - use terminal <type> (RFC 1091).\n");
-  fprintf(stderr, "    --ignore-dsr          - ignore DSR state.\n");
+  fprintf(stderr, "    --help                - show this help.\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "COM port options:\n");
+  fprintf(stderr, "    --baud <b>            - set baud rate to <b> (default is %ld),\n",
+                                               (long)ComParams().BaudRate());
+  fprintf(stderr, "                            where <b> is %s.\n",
+                                               ComParams::BaudRateLst());
+  fprintf(stderr, "    --data <d>            - set data bits to <d> (default is %ld), where <d> is\n",
+                                               (long)ComParams().ByteSize());
+  fprintf(stderr, "                            %s.\n",
+                                               ComParams::ByteSizeLst());
+  fprintf(stderr, "    --parity <p>          - set parity to <p> (default is %s), where <p> is\n",
+                                               ComParams::ParityStr(ComParams().Parity()));
+  fprintf(stderr, "                            %s.\n",
+                                               ComParams::ParityLst());
+  fprintf(stderr, "    --stop <s>            - set stop bits to <s> (default is %s), where <s> is\n",
+                                               ComParams::StopBitsStr(ComParams().StopBits()));
+  fprintf(stderr, "                            %s.\n",
+                                               ComParams::StopBitsLst());
+  fprintf(stderr, "    --ignore-dsr          - ignore DSR state (do not wait DSR to be ON before\n");
+  fprintf(stderr, "                            connecting to host, do not close connection after\n");
+  fprintf(stderr, "                            DSR is OFF and do not ignore any bytes received\n");
+  fprintf(stderr, "                            while DSR is OFF).\n");
+  fprintf(stderr, "\n");
+  fprintf(stderr, "    The value d[efault] above means to use current COM port settings.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "Client mode options:\n");
   fprintf(stderr, "    --awak-seq <sequence> - wait for awakening <sequence> from com port\n"
@@ -824,16 +862,27 @@ int main(int argc, char* argv[])
   const BYTE *pAwakSeq = NULL;
   const char *pIF = NULL;
   char **pArgs = &argv[1];
-  BOOL ignoreDSR = FALSE;
+  ComParams comParams;
 
   while (argc > 1) {
     if (**pArgs != '-')
       break;
 
+    if (!strcmp(*pArgs, "--help")) {
+      Usage(argv[0]);
+    } else
     if (!strcmp(*pArgs, "--telnet")) {
       protocol = prTelnet;
       pArgs++;
       argc--;
+    } else
+    if (!strcmp(*pArgs, "--ignore-dsr")) {
+      pArgs++;
+      argc--;
+      comParams.SetIgnoreDSR(TRUE);
+    } else
+    if (argc < 3) {
+      Usage(argv[0]);
     } else
     if (!strcmp(*pArgs, "--terminal")) {
       pArgs++;
@@ -842,10 +891,39 @@ int main(int argc, char* argv[])
       pArgs++;
       argc--;
     } else
-    if (!strcmp(*pArgs, "--ignore-dsr")) {
+    if (!strcmp(*pArgs, "--baud")) {
       pArgs++;
       argc--;
-      ignoreDSR = TRUE;
+      comParams.SetBaudRate(*pArgs);
+      pArgs++;
+      argc--;
+    } else
+    if (!strcmp(*pArgs, "--data")) {
+      pArgs++;
+      argc--;
+      comParams.SetByteSize(*pArgs);
+      pArgs++;
+      argc--;
+    } else
+    if (!strcmp(*pArgs, "--parity")) {
+      pArgs++;
+      argc--;
+      if (!comParams.SetParity(*pArgs)) {
+        fprintf(stderr, "Unknown parity value %s\n", *pArgs);
+        exit(1);
+      }
+      pArgs++;
+      argc--;
+    } else
+    if (!strcmp(*pArgs, "--stop")) {
+      pArgs++;
+      argc--;
+      if (!comParams.SetStopBits(*pArgs)) {
+        fprintf(stderr, "Unknown stop bits value %s\n", *pArgs);
+        exit(1);
+      }
+      pArgs++;
+      argc--;
     } else
     if (!strcmp(*pArgs, "--awak-seq")) {
       pArgs++;
@@ -862,7 +940,7 @@ int main(int argc, char* argv[])
       argc--;
     } else {
       fprintf(stderr, "Unknown option %s\n", *pArgs);
-      Usage(argv[0]);
+      exit(1);
     }
   }
 
@@ -887,9 +965,9 @@ int main(int argc, char* argv[])
   int res;
 
   if (argc == 4)
-    res = com2tcp(pArgs[0], ignoreDSR, pIF, pArgs[1], pArgs[2], *pProtocol, pAwakSeq);
+    res = com2tcp(pArgs[0], comParams, pIF, pArgs[1], pArgs[2], *pProtocol, pAwakSeq);
   else
-    res = tcp2com(pArgs[0], ignoreDSR, pIF, pArgs[1], *pProtocol);
+    res = tcp2com(pArgs[0], comParams, pIF, pArgs[1], *pProtocol);
 
   delete pProtocol;
 
