@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005 Vyacheslav Frolov
+ * Copyright (c) 2005-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.4  2007/02/08 11:52:11  vfrolov
+ * Added missing IAC escaping
+ *
  * Revision 1.3  2005/10/03 13:44:17  vfrolov
  * Added Clean() method
  *
@@ -42,6 +45,7 @@ class TelnetProtocol : public Protocol
     void SetTerminalType(const char *pTerminalType);
 
     virtual int Write(const void *pBuf, int count);
+    virtual int Send(const void *pBuf, int count);
     virtual void Clean();
   protected:
     void SendOption(BYTE code, BYTE option);
