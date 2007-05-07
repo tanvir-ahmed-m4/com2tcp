@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005 Vyacheslav Frolov
+ * Copyright (c) 2005-2007 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,12 +22,12 @@
 #ifndef _C2T_VERSION_H_
 #define _C2T_VERSION_H_
 
-#define C2T_COPYRIGHT_YEARS "2005"
+#define C2T_COPYRIGHT_YEARS "2005-2007"
 
 #define C2T_V1 1
-#define C2T_V2 2
+#define C2T_V2 3
 #define C2T_V3 0
-#define C2T_V4 1
+#define C2T_V4 0
 
 #define MK_VERSION_STR1(V1, V2, V3, V4) #V1 "." #V2 "." #V3 "." #V4
 #define MK_VERSION_STR(V1, V2, V3, V4) MK_VERSION_STR1(V1, V2, V3, V4)
