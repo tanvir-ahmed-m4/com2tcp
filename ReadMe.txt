@@ -18,7 +18,7 @@ The homepage for com0com project is http://com0com.sourceforge.net/.
 BUILDING
 ========
 
-Start Microsoft Visual C++ 2005 with hub4com.vcproj file.
+Start Microsoft Visual C++ 2005 with com2tcp.vcproj file.
 Set Active Configuration to "com2tcp - Win32 Release".
 Build com2tcp.exe.
 
