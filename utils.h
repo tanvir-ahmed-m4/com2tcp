@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2007 Vyacheslav Frolov
+ * Copyright (c) 2005-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.7  2008/02/08 16:40:56  vfrolov
+ * Protected SendRaw() and WriteRaw() Protocol's methods
+ *
  * Revision 1.6  2007/07/20 09:23:48  vfrolov
  * Added virtual ~Protocol()
  * Thanks to wurfholz
@@ -109,17 +112,20 @@ class Protocol
     virtual ~Protocol() {}
 
     virtual int Send(const void *pBuf, int count);
-    int SendRaw(const void *pBuf, int count) { return streamSendRead.PutData(pBuf, count); }
     void SendEof() { streamSendRead.PutEof(); }
     BOOL isSendFull() const { return streamSendRead.isFull(); }
     int Read(void *pBuf, int count) { return streamSendRead.GetData(pBuf, count); }
 
     virtual int Write(const void *pBuf, int count);
-    int WriteRaw(const void *pBuf, int count) { return streamWriteRecv.PutData(pBuf, count); }
     void WriteEof() { streamWriteRecv.PutEof(); }
     BOOL isWriteFull() const { return streamWriteRecv.isFull(); }
     int Recv(void *pBuf, int count) { return streamWriteRecv.GetData(pBuf, count); }
+
     virtual void Clean();
+
+  protected:
+    int SendRaw(const void *pBuf, int count) { return streamSendRead.PutData(pBuf, count); }
+    int WriteRaw(const void *pBuf, int count) { return streamWriteRecv.PutData(pBuf, count); }
 
   private:
     DataStream streamSendRead;
