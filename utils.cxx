@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2006 Vyacheslav Frolov
+ * Copyright (c) 2005-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.5  2008/02/22 12:56:42  vfrolov
+ * Implemented --connect-dtr option
+ *
  * Revision 1.4  2006/11/16 12:51:43  vfrolov
  * Added ability to set COM port parameters
  *
@@ -187,7 +190,8 @@ ComParams::ComParams()
     byteSize(8),
     parity(NOPARITY),
     stopBits(ONESTOPBIT),
-    ignoreDSR(FALSE)
+    ignoreDSR(FALSE),
+    connectDTR(FALSE)
 {
 }
 

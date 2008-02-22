@@ -1,7 +1,7 @@
 /*
  * $Id$
  *
- * Copyright (c) 2005-2006 Vyacheslav Frolov
+ * Copyright (c) 2005-2008 Vyacheslav Frolov
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.11  2008/02/22 12:56:42  vfrolov
+ * Implemented --connect-dtr option
+ *
  * Revision 1.10  2006/11/16 12:51:43  vfrolov
  * Added ability to set COM port parameters
  *
@@ -562,7 +565,7 @@ static HANDLE OpenC0C(const char *pPath, const ComParams &comParams)
   dcb.fOutxDsrFlow = FALSE;
   dcb.fDsrSensitivity = !comParams.IgnoreDSR();
   dcb.fRtsControl = RTS_CONTROL_HANDSHAKE;
-  dcb.fDtrControl = DTR_CONTROL_ENABLE;
+  dcb.fDtrControl = comParams.ConnectDTR() ? DTR_CONTROL_DISABLE : DTR_CONTROL_ENABLE;
   dcb.fOutX = FALSE;
   dcb.fInX = TRUE;
   dcb.XonChar = 0x11;
@@ -738,7 +741,14 @@ static int tcp2com(
     HANDLE hC0C = OpenC0C(pPath, comParams);
 
     if (hC0C != INVALID_HANDLE_VALUE) {
+      if (comParams.ConnectDTR())
+        EscapeCommFunction(hC0C, SETDTR);
+
       InOut(hC0C, hSock, protocol, comParams.IgnoreDSR(), hSockListen);
+
+      if (comParams.ConnectDTR())
+        EscapeCommFunction(hC0C, CLRDTR);
+
       CloseHandle(hC0C);
     }
 
@@ -797,7 +807,13 @@ static int com2tcp(
     if (hSock == INVALID_SOCKET)
       break;
 
+    if (comParams.ConnectDTR())
+      EscapeCommFunction(hC0C, SETDTR);
+
     InOut(hC0C, hSock, protocol, comParams.IgnoreDSR());
+
+    if (comParams.ConnectDTR())
+      EscapeCommFunction(hC0C, CLRDTR);
 
     Disconnect(hSock);
   }
@@ -841,6 +857,8 @@ static void Usage(const char *pProgName)
   fprintf(stderr, "                            connecting to host, do not close connection after\n");
   fprintf(stderr, "                            DSR is OFF and do not ignore any bytes received\n");
   fprintf(stderr, "                            while DSR is OFF).\n");
+  fprintf(stderr, "    --connect-dtr         - set DTR to ON/OFF on opening/closing connection to\n");
+  fprintf(stderr, "                            host.\n");
   fprintf(stderr, "\n");
   fprintf(stderr, "    The value d[efault] above means to use current COM port settings.\n");
   fprintf(stderr, "\n");
@@ -880,6 +898,11 @@ int main(int argc, char* argv[])
       pArgs++;
       argc--;
       comParams.SetIgnoreDSR(TRUE);
+    } else
+    if (!strcmp(*pArgs, "--connect-dtr")) {
+      pArgs++;
+      argc--;
+      comParams.SetConnectDTR(TRUE);
     } else
     if (argc < 3) {
       Usage(argv[0]);

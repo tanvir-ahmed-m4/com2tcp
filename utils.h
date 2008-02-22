@@ -19,6 +19,9 @@
  *
  *
  * $Log$
+ * Revision 1.8  2008/02/22 12:56:42  vfrolov
+ * Implemented --connect-dtr option
+ *
  * Revision 1.7  2008/02/08 16:40:56  vfrolov
  * Protected SendRaw() and WriteRaw() Protocol's methods
  *
@@ -142,6 +145,7 @@ class ComParams
     BOOL SetParity(const char *pParity);
     BOOL SetStopBits(const char *pStopBits);
     void SetIgnoreDSR(BOOL val) { ignoreDSR = val; }
+    void SetConnectDTR(BOOL val) { connectDTR = val; }
 
     static const char *ParityStr(int parity);
     static const char *StopBitsStr(int stopBits);
@@ -156,6 +160,7 @@ class ComParams
     int Parity() const { return parity; }
     int StopBits() const { return stopBits; }
     BOOL IgnoreDSR() const { return ignoreDSR; }
+    BOOL ConnectDTR() const { return connectDTR; }
 
   private:
     long baudRate;
@@ -163,6 +168,7 @@ class ComParams
     int parity;
     int stopBits;
     BOOL ignoreDSR;
+    BOOL connectDTR;
 };
 ///////////////////////////////////////////////////////////////
 
